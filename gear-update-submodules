@@ -1,0 +1,93 @@
+#!/bin/bash -e
+
+version=$1
+
+usage() {
+    echo "Usage: $0 <version>" 1>&2
+    exit 1
+}
+
+update_submodules() {
+    local reporoot="$1"
+    local relativedir="$2"
+
+    while read -r key path; do
+        local submodule=$(echo "$key" | sed -n 's/^submodule\.\(.*\)\.path$/\1/p')
+        local full_path="$reporoot/$path"
+        local submodule_name=$(basename "$path")
+
+        if [ ! -d "$path" ]; then
+            echo "Error: Submodule path '$path' not found"
+            exit 2
+        fi
+
+        local hash=$(git submodule status "$path" | awk '{print $1}')
+        if [ -z "$hash" ]; then
+            echo "Error: Submodule hash for '$path' is empty"
+            exit 3
+        fi
+
+        local url=$(git config --file .gitmodules submodule."$submodule".url)
+        if [ -z "$url" ]; then
+            echo "Error: URL for submodule '$submodule' is empty"
+            exit 4
+        fi
+
+        local new_relpath="${relativedir:+$relativedir/}$path"
+        local tag="$new_relpath-$version"
+        echo "$tag"
+
+        pushd "$reporoot" 1>/dev/null
+        git fetch "$url" "$hash" 2>/dev/null || \
+        git fetch "$url" 2>/dev/null || \
+        git fetch "$url" --tags 2>/dev/null
+
+        git tag -f "$tag" "$hash" 1>&2
+        popd 1>/dev/null
+
+        pushd "$path" 1>/dev/null
+        update_submodules "$reporoot" "$new_relpath"
+        popd 1>/dev/null
+    done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+}
+
+version="$1"
+if [ -z "$version" ]; then
+    echo "Error: version argument is required" 1>&2
+    usage
+fi
+
+rootdir=$(git rev-parse --show-toplevel)
+cd "$rootdir"
+git submodule update --init --recursive
+
+tags="$(update_submodules "$rootdir" '')"
+
+git merge --no-edit -s ours --allow-unrelated-histories $(echo "$tags" | xargs echo)
+
+echo "Following tags were merged:"
+echo "$tags"
+echo
+echo "Following rules should be added:"
+while read tag ; do
+    tag_tar=$(echo "$tag" | sed -e "s:$version:@version@:g")
+    tag_name=$(echo "$tag" | sed -e "s:-$version::g" -e "s:/:-:g")
+    tag_base=$(echo "$tag" | sed -e "s:-$version::g")
+    echo "tar: $tag_tar:. name=@name@-@version@-$tag_name base=$tag_base"
+done < <(echo "$tags")
+echo
+echo "Following sources should be added:"
+# Answer for The Ultimate Question of Life, the Universe, and Everything
+# without jokes there is not so many packages, having Source42, so it shouldn't conflict
+# in most of cases
+source_number=42
+setup_line=""
+while read tag ; do
+    tag_name=$(echo "$tag" | sed -e "s:-$version::g" -e "s:/:-:g")
+    echo "Source$source_number: %name-%version-$tag_name.tar"
+    setupline="$setupline -a$source_number"
+    ((source_number++))
+done < <(echo "$tags")
+echo
+echo "Additional args for setup line for your convenience:"
+echo "$setupline"
