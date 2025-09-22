@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-version=$1
+version="$1"; shift
 
 usage() {
     echo "Usage: $0 <version>" 1>&2
@@ -60,20 +60,20 @@ rootdir=$(git rev-parse --show-toplevel)
 cd "$rootdir"
 git submodule update --init --recursive
 
-tags="$(update_submodules "$rootdir" '')"
+set -- $(update_submodules "$rootdir" '')
 
-git merge --no-edit -s ours --allow-unrelated-histories $(echo "$tags" | xargs echo)
+git merge --no-edit -s ours --allow-unrelated-histories "$@"
 
 echo "Following tags were merged:"
-echo "$tags"
+printf '%s\n' "$@"
 echo
 echo "Following rules should be added:"
-while read tag ; do
+for tag; do
     tag_tar=$(echo "$tag" | sed -e "s:$version:@version@:g")
     tag_name=$(echo "$tag" | sed -e "s:-$version::g" -e "s:/:-:g")
     tag_base=$(echo "$tag" | sed -e "s:-$version::g")
     echo "tar: $tag_tar:. name=@name@-@version@-$tag_name base=$tag_base"
-done < <(echo "$tags")
+done
 echo
 echo "Following sources should be added:"
 # Answer for The Ultimate Question of Life, the Universe, and Everything
@@ -81,12 +81,12 @@ echo "Following sources should be added:"
 # in most of cases
 source_number=42
 setup_line=""
-while read tag ; do
+for tag ; do
     tag_name=$(echo "$tag" | sed -e "s:-$version::g" -e "s:/:-:g")
     echo "Source$source_number: %name-%version-$tag_name.tar"
     setupline="$setupline -a$source_number"
     ((source_number++))
-done < <(echo "$tags")
+done
 echo
 echo "Additional args for setup line for your convenience:"
 echo "$setupline"
