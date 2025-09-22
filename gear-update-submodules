@@ -51,7 +51,6 @@ update_submodules() {
     done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$')
 }
 
-version="$1"
 if [ -z "$version" ]; then
     echo "Error: version argument is required" 1>&2
     usage
